@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Web-based AR Gesture Control Simulator</title>
+<!-- Bootstrap CSS for Styling -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<!-- FontAwesome for Icons -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;600&display=swap" rel="stylesheet">
+<style>
+    body {
+        background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+        color: #ffffff;
+        font-family: 'Poppins', sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 0;
+        padding: 20px;
+        text-align: center;
+    }
+    h1 {
+        font-weight: 600;
+        margin-bottom: 20px;
+        color: #ffffff;
+    }
+    #webcam-container {
+        position: relative;
+        width: 640px;
+        height: 480px;
+        margin-bottom: 20px;
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0px 8px 15px rgba(0, 0, 0, 0.3);
+    }
+    #gestureDisplay {
+        position: absolute;
+        bottom: 15px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 18px;
+        font-weight: 600;
+        color: #ffffff;
+        background-color: rgba(0, 0, 0, 0.7);
+        padding: 5px 15px;
+        border-radius: 15px;
+    }
+    #webcam {
+        width: 100%;
+        height: 100%;
+        transform: scaleX(-1); /* Flip video horizontally */
+    }
+    #outputCanvas, #threejs-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 10;
+    }
+    #toggleButton {
+        margin-top: 15px;
+        padding: 12px 25px;
+        font-size: 16px;
+        font-weight: 600;
+        border-radius: 30px;
+        color: #ffffff;
+        background-color: #007bff;
+        border: none;
+        transition: all 0.3s ease;
+        box-shadow: 0px 5px 15px rgba(0, 123, 255, 0.3);
+    }
+    #toggleButton:hover {
+        background-color: #0056b3;
+        box-shadow: 0px 5px 15px rgba(0, 86, 179, 0.4);
+    }
+</style>
+</head>
+<body>
+ 
+<h1>Web-based AR Gesture Control Simulator</h1>
+ 
+<!-- Webcam Container with Overlayed 3D Environment -->
+<div id="webcam-container">
+<video id="webcam" autoplay playsinline></video>
+<canvas id="outputCanvas"></canvas>
+<div id="threejs-container"></div>
+<div id="gestureDisplay"></div>
+</div>
+ 
+<!-- Toggle Button to Switch 3D Objects -->
+<button id="toggleButton" class="btn btn-primary">
+<i class="fas fa-exchange-alt"></i> Toggle Object
+</button>
+<div id="output">None</div>
+ 
+<!-- TensorFlow.js -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+ 
+<!-- Load MediaPipe Hands -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
+ 
+<!-- Three.js Library -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+ 
+ 
+ 
+ 
+<!-- <script>
+    let isPinching = false;
+    let isOpenHand = false; // Track the open hand gesture
+    let objectHeld = false;
+    let objects = [];  // Array to store 3D objects
+    let currentObjectIndex = 0;  // Track current object
+    let scene, camera, renderer;
+    let initialScaleDistance = null;  // Initial distance for scaling
+    let currentScaleFactor = 1;  // Current scale factor
+ 
+    // Buffer for smoothing landmarks
+    let smoothedLandmarks = [];
+    const SMOOTHING_WINDOW_SIZE = 5;
+ 
+    function smoothLandmarks(newLandmarks) {
+        if (smoothedLandmarks.length === 0) {
+            smoothedLandmarks = Array(SMOOTHING_WINDOW_SIZE).fill(newLandmarks);
+        } else {
+            smoothedLandmarks.shift();
+            smoothedLandmarks.push(newLandmarks);
+        }
+ 
+        const averagedLandmarks = newLandmarks.map((_, i) => {
+            const sumX = smoothedLandmarks.reduce((acc, landmarks) => acc + landmarks[i].x, 0);
+            const averageX = sumX / SMOOTHING_WINDOW_SIZE;
+ 
+            const sumY = smoothedLandmarks.reduce((acc, landmarks) => acc + landmarks[i].y, 0);
+            const averageY = sumY / SMOOTHING_WINDOW_SIZE;
+ 
+            return { x: averageX, y: averageY, z: newLandmarks[i].z }; // Use z as is (for simplicity)
+        });
+ 
+        return averagedLandmarks;
+    }
+ 
+    function recognizeGesture(landmarks) {
+        const smoothed = smoothLandmarks(landmarks);
+        const gestureDisplay = document.getElementById('gestureDisplay');
+        const thumbTip = smoothed[4];
+        const indexTip = smoothed[8];
+        const palmBase = smoothed[0]; // Palm base landmark for reference
+ 
+        // Calculate distances for gestures
+        const distancesToPalm = smoothed.slice(4, 21).map((tip) =>
+            Math.sqrt(
+                Math.pow(tip.x - palmBase.x, 2) +
+                Math.pow(tip.y - palmBase.y, 2)
+            )
+        );
+ 
+        // Check for open hand gesture: All finger tips are far from the palm base
+        if (distancesToPalm.every((distance) => distance > 0.2)) {
+            isOpenHand = true;
+            gestureDisplay.innerText = 'Gesture: Open Hand (Rotate Object)';
+            rotateObject();
+        } else {
+            isOpenHand = false;
+        }
+ 
+        // Pinch gesture
+        const distanceThumbIndex = Math.sqrt(
+            Math.pow(thumbTip.x - indexTip.x, 2) +
+            Math.pow(thumbTip.y - indexTip.y, 2)
+        );
+ 
+        if (distanceThumbIndex < 0.05) {
+            isPinching = true;
+            gestureDisplay.innerText = 'Gesture: Pinch (Move/Scale Object)';
+            if (objects[currentObjectIndex]) {
+                moveObject(indexTip);
+                scaleObject(distanceThumbIndex);
+            }
+        } else if (distanceThumbIndex > 0.1 && isPinching) {
+            isPinching = false;
+            objectHeld = false;
+            initialScaleDistance = null;  // Reset scaling reference
+            gestureDisplay.innerText = 'Gesture: None';
+        }
+ 
+        // If no specific gesture is detected
+        if (!isPinching && !isOpenHand) {
+            gestureDisplay.innerText = 'Gesture: None';
+        }
+    }
+ 
+    function moveObject(indexTip) {
+        if (!objectHeld) {
+            objectHeld = true;
+        }
+ 
+        // Ensure the current object exists before accessing its position
+        if (objects[currentObjectIndex]) {
+            const x = (indexTip.x - 0.5) * 10;
+            const y = -(indexTip.y - 0.5) * 10;
+            objects[currentObjectIndex].position.set(x, y, 0);
+        }
+    }
+ 
+    function scaleObject(distanceThumbIndex) {
+        const MIN_SCALE = 0.5; // Minimum scale limit
+        const MAX_SCALE = 3.0; // Maximum scale limit
+ 
+        if (!initialScaleDistance) {
+            // Initialize the scaling reference distance
+            initialScaleDistance = distanceThumbIndex;
+        }
+ 
+        // Ensure the current object exists before modifying its scale
+        if (objects[currentObjectIndex]) {
+            let scaleFactor = distanceThumbIndex / initialScaleDistance;
+ 
+            // Update the current scale factor and enforce limits
+            currentScaleFactor = Math.min(
+                Math.max(currentScaleFactor * scaleFactor, MIN_SCALE),
+                MAX_SCALE
+            );
+ 
+            // Apply the constrained scale factor to the object
+            objects[currentObjectIndex].scale.set(
+                currentScaleFactor,
+                currentScaleFactor,
+                currentScaleFactor
+            );
+ 
+            // Update initial distance for next frame
+            initialScaleDistance = distanceThumbIndex;
+        }
+    }
+ 
+    function rotateObject() {
+        const rotationSpeed = 0.05; // Adjust rotation speed
+        if (objects[currentObjectIndex]) {
+            // Rotate the object around its Y-axis (vertical) and X-axis (horizontal)
+            objects[currentObjectIndex].rotation.y += rotationSpeed;
+            objects[currentObjectIndex].rotation.x += rotationSpeed;
+        }
+    }
+ 
+    function initializeThreeJS() {
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(75, 640 / 480, 0.1, 1000);
+        renderer = new THREE.WebGLRenderer({ alpha: true });
+        renderer.setSize(640, 480);
+        document.getElementById('threejs-container').appendChild(renderer.domElement);
+        console.log("Three.js initialized");
+ 
+        const textureLoader = new THREE.TextureLoader();
+        const envTexture = new THREE.CubeTextureLoader()
+            .setPath('https://threejsfundamentals.org/threejs/resources/images/skybox/')
+            .load(['pos-x.jpg', 'neg-x.jpg', 'pos-y.jpg', 'neg-y.jpg', 'pos-z.jpg', 'neg-z.jpg']);
+ 
+        const materialOptions = { envMap: envTexture, metalness: 0.8, roughness: 0.2 };
+ 
+        // Define three different objects
+        const cube = new THREE.Mesh(
+            new THREE.BoxGeometry(),
+            new THREE.MeshStandardMaterial({ ...materialOptions, map: textureLoader.load('https://threejsfundamentals.org/threejs/resources/images/wall.jpg') })
+        );
+        const sphere = new THREE.Mesh(
+            new THREE.SphereGeometry(0.75, 32, 32),
+            new THREE.MeshStandardMaterial({ ...materialOptions, map: textureLoader.load('https://threejsfundamentals.org/threejs/resources/images/earth.jpg') })
+        );
+        const cone = new THREE.Mesh(
+            new THREE.ConeGeometry(0.7, 1.5, 32),
+            new THREE.MeshStandardMaterial({ ...materialOptions, color: 0xff6347 })
+        );
+ 
+        objects = [cube, sphere, cone];
+        scene.add(objects[currentObjectIndex]);
+        camera.position.z = 5;
+ 
+        document.getElementById('toggleButton').addEventListener('click', () => {
+            // Safely remove the current object and toggle
+            if (objects[currentObjectIndex]) {
+                scene.remove(objects[currentObjectIndex]);
+            }
+            currentObjectIndex = (currentObjectIndex + 1) % objects.length;
+            scene.add(objects[currentObjectIndex]);
+            console.log("Object toggled");
+        });
+ 
+        const ambientLight = new THREE.AmbientLight(0x404040, 1.5);
+        scene.add(ambientLight);
+ 
+        const spotLight = new THREE.SpotLight(0xffffff, 1);
+        spotLight.position.set(10, 10, 10);
+        spotLight.castShadow = true;
+        scene.add(spotLight);
+ 
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+    }
+ 
+    async function initializeHandTracking() {
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.8, // Increase detection confidence
+            minTrackingConfidence: 0.8  // Increase tracking confidence
+        });
+        hands.onResults(onResults);
+        console.log("Hand tracking initialized");
+        processFrame(hands);
+    }
+ 
+    async function setupWebcam() {
+        const webcam = document.getElementById('webcam');
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        webcam.srcObject = stream;
+        await new Promise((resolve) => (webcam.onloadedmetadata = resolve));
+        console.log("Webcam setup complete");
+    }
+ 
+    async function processFrame(hands) {
+        const webcam = document.getElementById('webcam');
+        await hands.send({ image: webcam });
+        requestAnimationFrame(() => processFrame(hands));
+    }
+ 
+    function onResults(results) {
+        const outputCanvas = document.getElementById('outputCanvas');
+        const outputCtx = outputCanvas.getContext('2d');
+        const gestureDisplay = document.getElementById('gestureDisplay');
+        outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+        outputCtx.drawImage(document.getElementById('webcam'), 0, 0, outputCanvas.width, outputCanvas.height);
+ 
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const landmarks = results.multiHandLandmarks[0];
+            drawHandLandmarks(landmarks);
+            recognizeGesture(landmarks);
+        } else {
+            gestureDisplay.innerText = 'Gesture: None';
+        }
+    }
+ 
+    function drawHandLandmarks(landmarks) {
+        const outputCtx = document.getElementById('outputCanvas').getContext('2d');
+        landmarks.forEach((landmark) => {
+            outputCtx.beginPath();
+            outputCtx.arc(landmark.x * outputCanvas.width, landmark.y * outputCanvas.height, 5, 0, 2 * Math.PI);
+            outputCtx.fillStyle = 'rgba(0, 255, 0, 0.6)';
+            outputCtx.fill();
+        });
+    }
+ 
+    async function start() {
+        await setupWebcam();
+        await initializeHandTracking();
+        initializeThreeJS();
+    }
+ 
+    start();
+</script> -->
+ 
+<script>
+    const divElement = document.getElementById('output');
+ 
+    let isPinching = false;
+    let isOpenHand = false; // Track the open hand gesture
+    let objectHeld = false;
+    let objects = [];  // Array to store 3D objects
+    let currentObjectIndex = 0;  // Track current object
+    let scene, camera, renderer;
+    let initialScaleDistance = null;  // Initial distance for scaling
+    let currentScaleFactor = 1;  // Current scale factor
+ 
+    // Buffer for smoothing landmarks
+    let smoothedLandmarks = [];
+    const SMOOTHING_WINDOW_SIZE = 5;
+ 
+    function smoothLandmarks(newLandmarks) {
+        if (smoothedLandmarks.length === 0) {
+            smoothedLandmarks = Array(SMOOTHING_WINDOW_SIZE).fill(newLandmarks);
+        } else {
+            smoothedLandmarks.shift();
+            smoothedLandmarks.push(newLandmarks);
+        }
+ 
+        const averagedLandmarks = newLandmarks.map((_, i) => {
+            const sumX = smoothedLandmarks.reduce((acc, landmarks) => acc + landmarks[i].x, 0);
+            const averageX = sumX / SMOOTHING_WINDOW_SIZE;
+ 
+            const sumY = smoothedLandmarks.reduce((acc, landmarks) => acc + landmarks[i].y, 0);
+            const averageY = sumY / SMOOTHING_WINDOW_SIZE;
+ 
+            return { x: averageX, y: averageY, z: newLandmarks[i].z }; // Use z as is (for simplicity)
+        });
+ 
+        return averagedLandmarks;
+    }
+ 
+    function recognizeGesture(landmarks) {
+        const smoothed = smoothLandmarks(landmarks);
+        const gestureDisplay = document.getElementById('gestureDisplay');
+        const thumbTip = smoothed[4];
+        const indexTip = smoothed[8];
+        const palmBase = smoothed[0]; // Palm base landmark for reference
+ 
+        let gestureDetected = 'None'; // Default to None
+        divElement.textContent = "None"
+ 
+        // Calculate distances for gestures
+        const distancesToPalm = smoothed.slice(4, 21).map((tip) =>
+            Math.sqrt(
+                Math.pow(tip.x - palmBase.x, 2) +
+                Math.pow(tip.y - palmBase.y, 2)
+            )
+        );
+ 
+        // Check for open hand gesture: All finger tips are far from the palm base
+        if (distancesToPalm.every((distance) => distance > 0.2)) {
+            isOpenHand = true;
+            gestureDetected = 'Open Hand (Rotate Object)';
+            divElement.textContent = "Open Hand"
+            rotateObject();
+        } else {
+            isOpenHand = false;
+        }
+ 
+        // Pinch gesture
+        const distanceThumbIndex = Math.sqrt(
+            Math.pow(thumbTip.x - indexTip.x, 2) +
+            Math.pow(thumbTip.y - indexTip.y, 2)
+        );
+ 
+        if (distanceThumbIndex < 0.05) {
+            isPinching = true;
+            gestureDetected = 'Pinch (Move/Scale Object)';
+            if (objects[currentObjectIndex]) {
+                moveObject(indexTip);
+                scaleObject(distanceThumbIndex);
+            }
+        } else if (distanceThumbIndex > 0.1 && isPinching) {
+            isPinching = false;
+            objectHeld = false;
+            initialScaleDistance = null; // Reset scaling reference
+            gestureDetected = 'None'; // Reset to None if no gesture
+        }
+ 
+        // Update the gesture display
+        gestureDisplay.innerText = `Gesture: ${gestureDetected}`;
+    }
+ 
+    function moveObject(indexTip) {
+        console.log("Pinch")
+        divElement.textContent = "Pinch"
+ 
+        if (!objectHeld) {
+            objectHeld = true;
+        }
+ 
+        // Ensure the current object exists before accessing its position
+        if (objects[currentObjectIndex]) {
+            const x = (indexTip.x - 0.5) * 10;
+            const y = -(indexTip.y - 0.5) * 10;
+            objects[currentObjectIndex].position.set(x, y, 0);
+        }
+    }
+ 
+    function scaleObject(distanceThumbIndex) {
+        const MIN_SCALE = 0.5; // Minimum scale limit
+        const MAX_SCALE = 3.0; // Maximum scale limit
+ 
+        if (!initialScaleDistance) {
+            // Initialize the scaling reference distance
+            initialScaleDistance = distanceThumbIndex;
+        }
+ 
+        // Ensure the current object exists before modifying its scale
+        if (objects[currentObjectIndex]) {
+            let scaleFactor = distanceThumbIndex / initialScaleDistance;
+ 
+            // Update the current scale factor and enforce limits
+            currentScaleFactor = Math.min(
+                Math.max(currentScaleFactor * scaleFactor, MIN_SCALE),
+                MAX_SCALE
+            );
+ 
+            // Apply the constrained scale factor to the object
+            objects[currentObjectIndex].scale.set(
+                currentScaleFactor,
+                currentScaleFactor,
+                currentScaleFactor
+            );
+ 
+            // Update initial distance for next frame
+            initialScaleDistance = distanceThumbIndex;
+        }
+    }
+ 
+    function rotateObject() {
+        divElement.textContent = "object rotating"
+        console.log("object rotating")
+        const rotationSpeed = 0.05; // Adjust rotation speed
+        if (objects[currentObjectIndex]) {
+            // Rotate the object around its Y-axis (vertical) and X-axis (horizontal)
+            objects[currentObjectIndex].rotation.y += rotationSpeed;
+            objects[currentObjectIndex].rotation.x += rotationSpeed;
+        }
+    }
+ 
+    function initializeThreeJS() {
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(75, 640 / 480, 0.1, 1000);
+        renderer = new THREE.WebGLRenderer({ alpha: true });
+        renderer.setSize(640, 480);
+        document.getElementById('threejs-container').appendChild(renderer.domElement);
+        console.log("Three.js initialized");
+ 
+        const textureLoader = new THREE.TextureLoader();
+        const envTexture = new THREE.CubeTextureLoader()
+            .setPath('https://threejsfundamentals.org/threejs/resources/images/skybox/')
+            .load(['pos-x.jpg', 'neg-x.jpg', 'pos-y.jpg', 'neg-y.jpg', 'pos-z.jpg', 'neg-z.jpg']);
+ 
+        const materialOptions = { envMap: envTexture, metalness: 0.8, roughness: 0.2 };
+ 
+        // Define three different objects
+        const cube = new THREE.Mesh(
+            new THREE.BoxGeometry(),
+            new THREE.MeshStandardMaterial({ ...materialOptions, map: textureLoader.load('https://threejsfundamentals.org/threejs/resources/images/wall.jpg') })
+        );
+        const sphere = new THREE.Mesh(
+            new THREE.SphereGeometry(0.75, 32, 32),
+            new THREE.MeshStandardMaterial({ ...materialOptions, map: textureLoader.load('https://threejsfundamentals.org/threejs/resources/images/earth.jpg') })
+        );
+        const cone = new THREE.Mesh(
+            new THREE.ConeGeometry(0.7, 1.5, 32),
+            new THREE.MeshStandardMaterial({ ...materialOptions, color: 0xff6347 })
+        );
+ 
+        objects = [cube, sphere, cone];
+        scene.add(objects[currentObjectIndex]);
+        camera.position.z = 5;
+ 
+        document.getElementById('toggleButton').addEventListener('click', () => {
+            // Safely remove the current object and toggle
+            if (objects[currentObjectIndex]) {
+                scene.remove(objects[currentObjectIndex]);
+            }
+            currentObjectIndex = (currentObjectIndex + 1) % objects.length;
+            scene.add(objects[currentObjectIndex]);
+            console.log("Object toggled");
+        });
+ 
+        const ambientLight = new THREE.AmbientLight(0x404040, 1.5);
+        scene.add(ambientLight);
+ 
+        const spotLight = new THREE.SpotLight(0xffffff, 1);
+        spotLight.position.set(10, 10, 10);
+        spotLight.castShadow = true;
+        scene.add(spotLight);
+ 
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+    }
+ 
+    async function initializeHandTracking() {
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.8, // Increase detection confidence
+            minTrackingConfidence: 0.8  // Increase tracking confidence
+        });
+        hands.onResults(onResults);
+        console.log("Hand tracking initialized");
+        processFrame(hands);
+    }
+ 
+    async function setupWebcam() {
+        const webcam = document.getElementById('webcam');
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        webcam.srcObject = stream;
+        await new Promise((resolve) => (webcam.onloadedmetadata = resolve));
+        console.log("Webcam setup complete");
+    }
+ 
+    async function processFrame(hands) {
+        const webcam = document.getElementById('webcam');
+        await hands.send({ image: webcam });
+        requestAnimationFrame(() => processFrame(hands));
+    }
+ 
+    function onResults(results) {
+        const outputCanvas = document.getElementById('outputCanvas');
+        const outputCtx = outputCanvas.getContext('2d');
+        const gestureDisplay = document.getElementById('gestureDisplay');
+        outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+        outputCtx.drawImage(document.getElementById('webcam'), 0, 0, outputCanvas.width, outputCanvas.height);
+ 
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const landmarks = results.multiHandLandmarks[0];
+            drawHandLandmarks(landmarks);
+            recognizeGesture(landmarks);
+        } else {
+            gestureDisplay.innerText = 'Gesture: None'; // Reset when no hands are detected
+ 
+            divElement.textContent = "None"
+        }
+    }
+ 
+    function drawHandLandmarks(landmarks) {
+        const outputCtx = document.getElementById('outputCanvas').getContext('2d');
+        landmarks.forEach((landmark) => {
+            outputCtx.beginPath();
+            outputCtx.arc(landmark.x * outputCanvas.width, landmark.y * outputCanvas.height, 5, 0, 2 * Math.PI);
+            outputCtx.fillStyle = 'rgba(0, 255, 0, 0.6)';
+            outputCtx.fill();
+        });
+    }
+ 
+    async function start() {
+        await setupWebcam();
+        await initializeHandTracking();
+        initializeThreeJS();
+    }
+ 
+    start();
+</script>
+ 
+</body>
+</html>
+ 
